@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ngoduykhanh/wireguard-ui/store"
-	"golang.org/x/mod/sumdb/dirhash"
 	"io"
 	"io/fs"
 	"io/ioutil"
@@ -18,6 +16,9 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/ngoduykhanh/wireguard-ui/store"
+	"golang.org/x/mod/sumdb/dirhash"
 
 	externalip "github.com/glendc/go-external-ip"
 	"github.com/labstack/gommon/log"
@@ -91,6 +92,15 @@ func ClientDefaultsFromEnv() model.ClientDefaults {
 	clientDefaults.EnableAfterCreation = LookupEnvOrBool(DefaultClientEnableAfterCreationEnvVar, true)
 
 	return clientDefaults
+}
+
+// ContainsCIDR to check if ipnet1 contains ipnet2
+// https://stackoverflow.com/a/40406619/6111641
+// https://go.dev/play/p/Q4J-JEN3sF
+func ContainsCIDR(ipnet1, ipnet2 *net.IPNet) bool {
+	ones1, _ := ipnet1.Mask.Size()
+	ones2, _ := ipnet2.Mask.Size()
+	return ones1 <= ones2 && ipnet1.Contains(ipnet2.IP)
 }
 
 // ValidateCIDR to validate a network CIDR
@@ -380,6 +390,88 @@ func ValidateIPAllocation(serverAddresses []string, ipAllocatedList []string, ip
 	}
 
 	return true, nil
+}
+
+// ValidateAndFixSubnetRanges to check if subnet ranges are valid for the server configuration
+// Removes all non-valid CIDRs
+func ValidateAndFixSubnetRanges(db store.IStore) error {
+	if len(SubnetRangesOrder) == 0 {
+		return nil
+	}
+
+	server, err := db.GetServer()
+	if err != nil {
+		return err
+	}
+	var serverSubnets []*net.IPNet
+	for _, addr := range server.Interface.Addresses {
+		addr = strings.TrimSpace(addr)
+		_, net, err := net.ParseCIDR(addr)
+		if err != nil {
+			return err
+		}
+		serverSubnets = append(serverSubnets, net)
+	}
+
+	for _, rng := range SubnetRangesOrder {
+		cidrs := SubnetRanges[rng]
+		if len(cidrs) > 0 {
+			newCIDRs := make([]*net.IPNet, 0)
+			for _, cidr := range cidrs {
+				valid := false
+
+				for _, serverSubnet := range serverSubnets {
+					if ContainsCIDR(serverSubnet, cidr) {
+						valid = true
+						break
+					}
+				}
+
+				if valid {
+					newCIDRs = append(newCIDRs, cidr)
+				} else {
+					log.Warnf("[%v] CIDR is outside of all server subnets: %v. Removed.", rng, cidr)
+				}
+			}
+
+			if len(newCIDRs) > 0 {
+				SubnetRanges[rng] = newCIDRs
+			} else {
+				delete(SubnetRanges, rng)
+				log.Warnf("[%v] No valid CIDRs in this subnet range. Removed.", rng)
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetSubnetRangesString to get a formatted string, representing active subnet ranges
+func GetSubnetRangesString() string {
+	if len(SubnetRangesOrder) == 0 {
+		return ""
+	}
+
+	strB := strings.Builder{}
+
+	for _, rng := range SubnetRangesOrder {
+		cidrs := SubnetRanges[rng]
+		if len(cidrs) > 0 {
+			strB.WriteString(rng)
+			strB.WriteString(":[")
+			first := true
+			for _, cidr := range cidrs {
+				if !first {
+					strB.WriteString(", ")
+				}
+				strB.WriteString(cidr.String())
+				first = false
+			}
+			strB.WriteString("]  ")
+		}
+	}
+
+	return strings.TrimSpace(strB.String())
 }
 
 // WriteWireGuardServerConfig to write Wireguard server config. e.g. wg0.conf
