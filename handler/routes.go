@@ -348,6 +348,10 @@ func GetClients(db store.IStore) echo.HandlerFunc {
 			})
 		}
 
+		for i, clientData := range clientDataList {
+			clientDataList[i] = util.FillClientSubnetRange(clientData)
+		}
+
 		return c.JSON(http.StatusOK, clientDataList)
 	}
 }
@@ -368,7 +372,7 @@ func GetClient(db store.IStore) echo.HandlerFunc {
 			return c.JSON(http.StatusNotFound, jsonHTTPResponse{false, "Client not found"})
 		}
 
-		return c.JSON(http.StatusOK, clientData)
+		return c.JSON(http.StatusOK, util.FillClientSubnetRange(clientData))
 	}
 }
 
