@@ -249,12 +249,14 @@ Wireguard Clients
             setClientStatus(clientID, true);
             const divElement = document.getElementById("paused_" + clientID);
             divElement.style.visibility = "hidden";
+            updateApplyConfigVisibility()
         }
 
         function pauseClient(clientID) {
             setClientStatus(clientID, false);
             const divElement = document.getElementById("paused_" + clientID);
             divElement.style.visibility = "visible";
+            updateApplyConfigVisibility()
         }
 
         function updateSubnetRangesList() {
@@ -456,6 +458,7 @@ Wireguard Clients
                         toastr.success('Removed client successfully');
                         const divElement = document.getElementById('client_' + client_id);
                         divElement.style.display = "none";
+                        updateApplyConfigVisibility()
                     },
                     error: function(jqXHR, exception) {
                         const responseJson = jQuery.parseJSON(jqXHR.responseText);
@@ -483,6 +486,7 @@ Wireguard Clients
                     'defaultText': 'Add More',
                     'removeWithBackspace': true,
                     'minChars': 0,
+                    'minInputWidth': '100%',
                     'placeholderColor': '#666666'
                 });
 
@@ -494,6 +498,7 @@ Wireguard Clients
                     'defaultText': 'Add More',
                     'removeWithBackspace': true,
                     'minChars': 0,
+                    'minInputWidth': '100%',
                     'placeholderColor': '#666666'
                 });
 
@@ -504,6 +509,7 @@ Wireguard Clients
                     'defaultText': 'Add More',
                     'removeWithBackspace' : true,
                     'minChars': 0,
+                    'minInputWidth': '100%',
                     'placeholderColor': '#666666'
                 })
 
