@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ngoduykhanh/wireguard-ui/store"
-	"golang.org/x/mod/sumdb/dirhash"
 	"io"
 	"io/fs"
 	"io/ioutil"
@@ -19,6 +17,10 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/ngoduykhanh/wireguard-ui/store"
+	"github.com/ngoduykhanh/wireguard-ui/telegram"
+	"golang.org/x/mod/sumdb/dirhash"
+
 	externalip "github.com/glendc/go-external-ip"
 	"github.com/labstack/gommon/log"
 	"github.com/ngoduykhanh/wireguard-ui/model"
@@ -26,7 +28,7 @@ import (
 )
 
 // BuildClientConfig to create wireguard client config string
-func BuildClientConfig(client model.Client, server model.Server, setting model.GlobalSetting) string {
+var BuildClientConfig telegram.BuildClientConfig = func(client model.Client, server model.Server, setting model.GlobalSetting) string {
 	// Interface section
 	clientAddress := fmt.Sprintf("Address = %s\n", strings.Join(client.AllocatedIPs, ","))
 	clientPrivateKey := fmt.Sprintf("PrivateKey = %s\n", client.PrivateKey)
