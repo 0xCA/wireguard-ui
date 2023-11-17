@@ -215,7 +215,14 @@ func main() {
 	// serves other static files
 	app.GET(util.BasePath+"/static/*", echo.WrapHandler(http.StripPrefix(util.BasePath+"/static/", assetHandler)))
 
-	initTelegram(db, util.BuildClientConfig)
+	initDeps := telegram.TgBotInitDependencies{
+		DB:                      db,
+		BuildClientConfig:       util.BuildClientConfig,
+		TgUseridToClientID:      util.TgUseridToClientID,
+		TgUseridToClientIDMutex: &util.TgUseridToClientIDMutex,
+	}
+
+	initTelegram(initDeps)
 
 	app.Logger.Fatal(app.Start(util.BindAddress))
 }
@@ -253,10 +260,10 @@ func initServerConfig(db store.IStore, tmplDir fs.FS) {
 	}
 }
 
-func initTelegram(db store.IStore, buildClientConfig telegram.BuildClientConfig) {
+func initTelegram(initDeps telegram.TgBotInitDependencies) {
 	go func() {
 		for {
-			err := telegram.Start(db, buildClientConfig)
+			err := telegram.Start(initDeps)
 			if err == nil {
 				break
 			}
