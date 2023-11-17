@@ -216,10 +216,8 @@ func main() {
 	app.GET(util.BasePath+"/static/*", echo.WrapHandler(http.StripPrefix(util.BasePath+"/static/", assetHandler)))
 
 	initDeps := telegram.TgBotInitDependencies{
-		DB:                      db,
-		BuildClientConfig:       util.BuildClientConfig,
-		TgUseridToClientID:      util.TgUseridToClientID,
-		TgUseridToClientIDMutex: &util.TgUseridToClientIDMutex,
+		DB:                             db,
+		SendRequestedConfigsToTelegram: util.SendRequestedConfigsToTelegram,
 	}
 
 	initTelegram(initDeps)
