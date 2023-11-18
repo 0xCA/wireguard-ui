@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/ngoduykhanh/wireguard-ui/store"
+	"github.com/ngoduykhanh/wireguard-ui/telegram"
+	"github.com/skip2/go-qrcode"
 	"golang.org/x/mod/sumdb/dirhash"
 
 	externalip "github.com/glendc/go-external-ip"
@@ -25,6 +27,12 @@ import (
 	"github.com/ngoduykhanh/wireguard-ui/model"
 	"github.com/sdomino/scribble"
 )
+
+var qrCodeSettings = model.QRCodeSettings{
+	Enabled:    true,
+	IncludeDNS: true,
+	IncludeMTU: true,
+}
 
 // BuildClientConfig to create wireguard client config string
 func BuildClientConfig(client model.Client, server model.Server, setting model.GlobalSetting) string {
@@ -577,6 +585,57 @@ func WriteWireGuardServerConfig(tmplDir fs.FS, serverConfig model.Server, client
 	return nil
 }
 
+// SendRequestedConfigsToTelegram to send client all their configs. Returns failed configs list.
+func SendRequestedConfigsToTelegram(db store.IStore, userid int64) []string {
+	failedList := make([]string, 0)
+	TgUseridToClientIDMutex.RLock()
+	if clids, found := TgUseridToClientID[userid]; found && len(clids) > 0 {
+		TgUseridToClientIDMutex.RUnlock()
+
+		for _, clid := range clids {
+			clientData, err := db.GetClientByID(clid, qrCodeSettings)
+			if err != nil {
+				// return fmt.Errorf("unable to get client")
+				failedList = append(failedList, clid)
+				continue
+			}
+
+			// build config
+			server, _ := db.GetServer()
+			globalSettings, _ := db.GetGlobalSettings()
+			config := BuildClientConfig(*clientData.Client, server, globalSettings)
+			configData := []byte(config)
+			var qrData []byte
+
+			if clientData.Client.PrivateKey != "" {
+				qrData, err = qrcode.Encode(config, qrcode.Medium, 512)
+				if err != nil {
+					// return fmt.Errorf("unable to encode qr")
+					failedList = append(failedList, clientData.Client.Name)
+					continue
+				}
+			}
+
+			userid, err := strconv.ParseInt(clientData.Client.TgUserid, 10, 64)
+			if err != nil {
+				// return fmt.Errorf("tg usrid is unreadable")
+				failedList = append(failedList, clientData.Client.Name)
+				continue
+			}
+
+			err = telegram.SendConfig(userid, clientData.Client.Name, configData, qrData, true)
+			if err != nil {
+				failedList = append(failedList, clientData.Client.Name)
+				continue
+			}
+			time.Sleep(2 * time.Second)
+		}
+	} else {
+		TgUseridToClientIDMutex.RUnlock()
+	}
+	return failedList
+}
+
 func LookupEnvOrString(key string, defaultVal string) string {
 	if val, ok := os.LookupEnv(key); ok {
 		return val
@@ -686,4 +745,66 @@ func RandomString(length int) string {
 		b[i] = charset[seededRand.Intn(len(charset))]
 	}
 	return string(b)
+}
+
+func AddTgToClientID(userid int64, clientID string) {
+	TgUseridToClientIDMutex.Lock()
+	defer TgUseridToClientIDMutex.Unlock()
+
+	if _, ok := TgUseridToClientID[userid]; ok && TgUseridToClientID[userid] != nil {
+		TgUseridToClientID[userid] = append(TgUseridToClientID[userid], clientID)
+	} else {
+		TgUseridToClientID[userid] = []string{clientID}
+	}
+}
+
+func UpdateTgToClientID(userid int64, clientID string) {
+	TgUseridToClientIDMutex.Lock()
+	defer TgUseridToClientIDMutex.Unlock()
+
+	// Detach clientID from any existing userid
+	for uid, cls := range TgUseridToClientID {
+		if cls != nil {
+			filtered := filterStringSlice(cls, clientID)
+			if len(filtered) > 0 {
+				TgUseridToClientID[uid] = filtered
+			} else {
+				delete(TgUseridToClientID, uid)
+			}
+		}
+	}
+
+	// Attach it to the new one
+	if _, ok := TgUseridToClientID[userid]; ok && TgUseridToClientID[userid] != nil {
+		TgUseridToClientID[userid] = append(TgUseridToClientID[userid], clientID)
+	} else {
+		TgUseridToClientID[userid] = []string{clientID}
+	}
+}
+
+func RemoveTgToClientID(clientID string) {
+	TgUseridToClientIDMutex.Lock()
+	defer TgUseridToClientIDMutex.Unlock()
+
+	// Detach clientID from any existing userid
+	for uid, cls := range TgUseridToClientID {
+		if cls != nil {
+			filtered := filterStringSlice(cls, clientID)
+			if len(filtered) > 0 {
+				TgUseridToClientID[uid] = filtered
+			} else {
+				delete(TgUseridToClientID, uid)
+			}
+		}
+	}
+}
+
+func filterStringSlice(s []string, excludedStr string) []string {
+	filtered := s[:0]
+	for _, v := range s {
+		if v != excludedStr {
+			filtered = append(filtered, v)
+		}
+	}
+	return filtered
 }

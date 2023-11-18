@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strconv"
 	"time"
 
 	"github.com/sdomino/scribble"
@@ -137,6 +138,20 @@ func (o *JsonDB) Init() error {
 		}
 		o.conn.Write("users", user.Username, user)
 		os.Chmod(path.Join(path.Join(o.dbPath, "users"), user.Username+".json"), 0600)
+	}
+
+	// init cache
+	clients, err := o.GetClients(false)
+	if err != nil {
+		return nil
+	}
+	for _, cl := range clients {
+		client := cl.Client
+		if len(client.TgUserid) > 3 {
+			if userid, err := strconv.ParseInt(client.TgUserid, 10, 64); err == nil {
+				util.UpdateTgToClientID(userid, client.ID)
+			}
+		}
 	}
 
 	return nil
@@ -295,11 +310,17 @@ func (o *JsonDB) GetClientByID(clientID string, qrCodeSettings model.QRCodeSetti
 func (o *JsonDB) SaveClient(client model.Client) error {
 	clientPath := path.Join(path.Join(o.dbPath, "clients"), client.ID+".json")
 	output := o.conn.Write("clients", client.ID, client)
+	if output == nil && len(client.TgUserid) > 3 {
+		if userid, err := strconv.ParseInt(client.TgUserid, 10, 64); err == nil {
+			util.UpdateTgToClientID(userid, client.ID)
+		}
+	}
 	os.Chmod(clientPath, 0600)
 	return output
 }
 
 func (o *JsonDB) DeleteClient(clientID string) error {
+	util.RemoveTgToClientID(clientID)
 	return o.conn.Delete("clients", clientID)
 }
 

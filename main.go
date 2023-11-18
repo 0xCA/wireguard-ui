@@ -12,6 +12,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/gommon/log"
 	"github.com/ngoduykhanh/wireguard-ui/store"
+	"github.com/ngoduykhanh/wireguard-ui/telegram"
 
 	"github.com/ngoduykhanh/wireguard-ui/emailer"
 	"github.com/ngoduykhanh/wireguard-ui/handler"
@@ -27,22 +28,25 @@ var (
 	gitRef     = "N/A"
 	buildTime  = fmt.Sprintf(time.Now().UTC().Format("01-02-2006 15:04:05"))
 	// configuration variables
-	flagDisableLogin   bool   = false
-	flagBindAddress    string = "0.0.0.0:5000"
-	flagSmtpHostname   string = "127.0.0.1"
-	flagSmtpPort       int    = 25
-	flagSmtpUsername   string
-	flagSmtpPassword   string
-	flagSmtpAuthType   string = "NONE"
-	flagSmtpNoTLSCheck bool   = false
-	flagSmtpEncryption string = "STARTTLS"
-	flagSendgridApiKey string
-	flagEmailFrom      string
-	flagEmailFromName  string = "WireGuard UI"
-	flagSessionSecret  string = util.RandomString(32)
-	flagWgConfTemplate string
-	flagBasePath       string
-	flagSubnetRanges   string
+	flagDisableLogin             bool   = false
+	flagBindAddress              string = "0.0.0.0:5000"
+	flagSmtpHostname             string = "127.0.0.1"
+	flagSmtpPort                 int    = 25
+	flagSmtpUsername             string
+	flagSmtpPassword             string
+	flagSmtpAuthType             string = "NONE"
+	flagSmtpNoTLSCheck           bool   = false
+	flagSmtpEncryption           string = "STARTTLS"
+	flagSendgridApiKey           string
+	flagEmailFrom                string
+	flagEmailFromName            string = "WireGuard UI"
+	flagTelegramToken            string
+	flagTelegramAllowConfRequest bool   = false
+	flagTelegramFloodWait        int    = 60
+	flagSessionSecret            string = util.RandomString(32)
+	flagWgConfTemplate           string
+	flagBasePath                 string
+	flagSubnetRanges             string
 )
 
 const (
@@ -79,6 +83,9 @@ func init() {
 	flag.StringVar(&flagSendgridApiKey, "sendgrid-api-key", util.LookupEnvOrString("SENDGRID_API_KEY", flagSendgridApiKey), "Your sendgrid api key.")
 	flag.StringVar(&flagEmailFrom, "email-from", util.LookupEnvOrString("EMAIL_FROM_ADDRESS", flagEmailFrom), "'From' email address.")
 	flag.StringVar(&flagEmailFromName, "email-from-name", util.LookupEnvOrString("EMAIL_FROM_NAME", flagEmailFromName), "'From' email name.")
+	flag.StringVar(&flagTelegramToken, "telegram-token", util.LookupEnvOrString("TELEGRAM_TOKEN", flagTelegramToken), "Telegram bot token for distributing configs to clients.")
+	flag.BoolVar(&flagTelegramAllowConfRequest, "telegram-allow-conf-request", util.LookupEnvOrBool("TELEGRAM_ALLOW_CONF_REQUEST", flagTelegramAllowConfRequest), "Allow users to get configs from the bot by sending a message.")
+	flag.IntVar(&flagTelegramFloodWait, "telegram-flood-wait", util.LookupEnvOrInt("TELEGRAM_FLOOD_WAIT", flagTelegramFloodWait), "Time in minutes before the next conf request is processed.")
 	flag.StringVar(&flagSessionSecret, "session-secret", util.LookupEnvOrString("SESSION_SECRET", flagSessionSecret), "The key used to encrypt session cookies.")
 	flag.StringVar(&flagWgConfTemplate, "wg-conf-template", util.LookupEnvOrString("WG_CONF_TEMPLATE", flagWgConfTemplate), "Path to custom wg.conf template.")
 	flag.StringVar(&flagBasePath, "base-path", util.LookupEnvOrString("BASE_PATH", flagBasePath), "The base path of the URL")
@@ -103,8 +110,15 @@ func init() {
 	util.BasePath = util.ParseBasePath(flagBasePath)
 	util.SubnetRanges = util.ParseSubnetRanges(flagSubnetRanges)
 
+	lvl, _ := util.ParseLogLevel(util.LookupEnvOrString(util.LogLevel, "INFO"))
+
+	telegram.TelegramToken = flagTelegramToken
+	telegram.TelegramAllowConfRequest = flagTelegramAllowConfRequest
+	telegram.TelegramFloodWait = flagTelegramFloodWait
+	telegram.LogLevel = lvl
+
 	// print only if log level is INFO or lower
-	if lvl, _ := util.ParseLogLevel(util.LookupEnvOrString(util.LogLevel, "INFO")); lvl <= log.INFO {
+	if lvl <= log.INFO {
 		// print app information
 		fmt.Println("Wireguard UI")
 		fmt.Println("App Version\t:", appVersion)
@@ -189,6 +203,7 @@ func main() {
 	app.POST(util.BasePath+"/new-client", handler.NewClient(db), handler.ValidSession, handler.ContentTypeJson)
 	app.POST(util.BasePath+"/update-client", handler.UpdateClient(db), handler.ValidSession, handler.ContentTypeJson)
 	app.POST(util.BasePath+"/email-client", handler.EmailClient(db, sendmail, defaultEmailSubject, defaultEmailContent), handler.ValidSession, handler.ContentTypeJson)
+	app.POST(util.BasePath+"/send-telegram-client", handler.SendTelegramClient(db), handler.ValidSession, handler.ContentTypeJson)
 	app.POST(util.BasePath+"/client/set-status", handler.SetClientStatus(db), handler.ValidSession, handler.ContentTypeJson)
 	app.POST(util.BasePath+"/remove-client", handler.RemoveClient(db), handler.ValidSession, handler.ContentTypeJson)
 	app.GET(util.BasePath+"/download", handler.DownloadClient(db), handler.ValidSession)
@@ -215,6 +230,13 @@ func main() {
 	assetHandler := http.FileServer(http.FS(assetsDir))
 	// serves other static files
 	app.GET(util.BasePath+"/static/*", echo.WrapHandler(http.StripPrefix(util.BasePath+"/static/", assetHandler)))
+
+	initDeps := telegram.TgBotInitDependencies{
+		DB:                             db,
+		SendRequestedConfigsToTelegram: util.SendRequestedConfigsToTelegram,
+	}
+
+	initTelegram(initDeps)
 
 	app.Logger.Fatal(app.Start(util.BindAddress))
 }
@@ -250,4 +272,15 @@ func initServerConfig(db store.IStore, tmplDir fs.FS) {
 	if err != nil {
 		log.Fatalf("Cannot create server config: ", err)
 	}
+}
+
+func initTelegram(initDeps telegram.TgBotInitDependencies) {
+	go func() {
+		for {
+			err := telegram.Start(initDeps)
+			if err == nil {
+				break
+			}
+		}
+	}()
 }

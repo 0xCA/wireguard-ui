@@ -11,6 +11,7 @@ type Client struct {
 	PublicKey       string    `json:"public_key"`
 	PresharedKey    string    `json:"preshared_key"`
 	Name            string    `json:"name"`
+	TgUserid        string    `json:"telegram_userid"`
 	Email           string    `json:"email"`
 	SubnetRanges    []string  `json:"subnet_ranges,omitempty"`
 	AllocatedIPs    []string  `json:"allocated_ips"`
