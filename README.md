@@ -37,10 +37,11 @@ docker-compose up
 ## Environment Variables
 
 | Variable                    | Description                                                                                                                                                  | Default                            |
-|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------|
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
 | `BASE_PATH`                 | Set this variable if you run wireguard-ui under a subpath of your reverse proxy virtual host (e.g. /wireguard))                                              | N/A                                |
-| `BIND_ADDRESS`              | The addresses that can access to the web interface and the port                                                                                              | 0.0.0.0:80                        |
+| `BIND_ADDRESS`              | The addresses that can access to the web interface and the port                                                                                              | 0.0.0.0:80                         |
 | `SESSION_SECRET`            | The secret key used to encrypt the session cookies. Set this to a random value                                                                               | N/A                                |
+| `SUBNET_RANGES`             | The list of address subdivision ranges. Format: `SR Name: 10.0.1.0/24; SR2: 10.0.2.0/24, 10.0.3.0/24` Each CIDR must be inside one of the server interfaces. | N/A                                |
 | `WGUI_USERNAME`             | The username for the login page. Used for db initialization only                                                                                             | `admin`                            |
 | `WGUI_PASSWORD`             | The password for the user on the login page. Will be hashed automatically. Used for db initialization only                                                   | `admin`                            |
 | `WGUI_PASSWORD_HASH`        | The password hash for the user on the login page. (alternative to `WGUI_PASSWORD`). Used for db initialization only                                          | N/A                                |
@@ -49,7 +50,7 @@ docker-compose up
 | `WGUI_DNS`                  | The default DNS servers (comma-separated-list) used in the global settings                                                                                   | `1.1.1.1`                          |
 | `WGUI_MTU`                  | The default MTU used in global settings                                                                                                                      | `1450`                             |
 | `WGUI_PERSISTENT_KEEPALIVE` | The default persistent keepalive for WireGuard in global settings                                                                                            | `15`                               |
-| `WGUI_FIREWALL_MARK`        | The default WireGuard firewall mark                                                                                                                          | `0xca6c`  (51820)                  |
+| `WGUI_FIREWALL_MARK`        | The default WireGuard firewall mark                                                                                                                          | `0xca6c` (51820)                   |
 | `WGUI_TABLE`                | The default WireGuard table value settings                                                                                                                   | `auto`                             |
 | `WGUI_CONFIG_FILE_PATH`     | The default WireGuard config file path used in global settings                                                                                               | `/etc/wireguard/wg0.conf`          |
 | `WGUI_LOG_LEVEL`            | The default log level. Possible values: `DEBUG`, `INFO`, `WARN`, `ERROR`, `OFF`                                                                              | `INFO`                             |
@@ -69,7 +70,7 @@ docker-compose up
 These environment variables are used to control the default server settings used when initializing the database.
 
 | Variable                          | Description                                                                                   | Default         |
-|-----------------------------------|-----------------------------------------------------------------------------------------------|-----------------|
+| --------------------------------- | --------------------------------------------------------------------------------------------- | --------------- |
 | `WGUI_SERVER_INTERFACE_ADDRESSES` | The default interface addresses (comma-separated-list) for the WireGuard server configuration | `10.252.1.0/24` |
 | `WGUI_SERVER_LISTEN_PORT`         | The default server listen port                                                                | `51820`         |
 | `WGUI_SERVER_POST_UP_SCRIPT`      | The default server post-up script                                                             | N/A             |
@@ -80,7 +81,7 @@ These environment variables are used to control the default server settings used
 These environment variables are used to set the defaults used in `New Client` dialog.
 
 | Variable                                    | Description                                                                                     | Default     |
-|---------------------------------------------|-------------------------------------------------------------------------------------------------|-------------|
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------- |
 | `WGUI_DEFAULT_CLIENT_ALLOWED_IPS`           | Comma-separated-list of CIDRs for the `Allowed IPs` field. (default )                           | `0.0.0.0/0` |
 | `WGUI_DEFAULT_CLIENT_EXTRA_ALLOWED_IPS`     | Comma-separated-list of CIDRs for the `Extra Allowed IPs` field. (default empty)                | N/A         |
 | `WGUI_DEFAULT_CLIENT_USE_SERVER_DNS`        | Boolean value [`0`, `f`, `F`, `false`, `False`, `FALSE`, `1`, `t`, `T`, `true`, `True`, `TRUE`] | `true`      |
@@ -91,7 +92,7 @@ These environment variables are used to set the defaults used in `New Client` di
 These environment variables only apply to the docker container.
 
 | Variable              | Description                                                   | Default |
-|-----------------------|---------------------------------------------------------------|---------|
+| --------------------- | ------------------------------------------------------------- | ------- |
 | `WGUI_MANAGE_START`   | Start/stop WireGuard when the container is started/stopped    | `false` |
 | `WGUI_MANAGE_RESTART` | Auto restart WireGuard when we Apply Config changes in the UI | `false` |
 
@@ -204,10 +205,11 @@ or
 docker compose build --build-arg=GIT_COMMIT=$(git rev-parse --short HEAD)
 ```
 
-:information_source: A container image is avaialble on [Docker Hub](https://hub.docker.com/r/ngoduykhanh/wireguard-ui) which you can pull and use 
+:information_source: A container image is avaialble on [Docker Hub](https://hub.docker.com/r/ngoduykhanh/wireguard-ui) which you can pull and use
+
 ```
 docker pull ngoduykhanh/wireguard-ui
-````
+```
 
 ### Build binary file
 
@@ -218,6 +220,7 @@ Prepare the assets directory
 ```
 
 Then build your executable
+
 ```sh
 go build -o wireguard-ui
 ```
@@ -228,6 +231,6 @@ MIT. See [LICENSE](https://github.com/ngoduykhanh/wireguard-ui/blob/master/LICEN
 
 ## Support
 
-If you like the project and want to support it, you can *buy me a coffee* ☕
+If you like the project and want to support it, you can _buy me a coffee_ ☕
 
 <a href="https://www.buymeacoffee.com/khanhngo" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>

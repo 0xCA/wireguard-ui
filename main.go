@@ -4,13 +4,14 @@ import (
 	"embed"
 	"flag"
 	"fmt"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/gommon/log"
-	"github.com/ngoduykhanh/wireguard-ui/store"
 	"io/fs"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/gommon/log"
+	"github.com/ngoduykhanh/wireguard-ui/store"
 
 	"github.com/ngoduykhanh/wireguard-ui/emailer"
 	"github.com/ngoduykhanh/wireguard-ui/handler"
@@ -41,6 +42,7 @@ var (
 	flagSessionSecret  string = util.RandomString(32)
 	flagWgConfTemplate string
 	flagBasePath       string
+	flagSubnetRanges   string
 )
 
 const (
@@ -80,6 +82,7 @@ func init() {
 	flag.StringVar(&flagSessionSecret, "session-secret", util.LookupEnvOrString("SESSION_SECRET", flagSessionSecret), "The key used to encrypt session cookies.")
 	flag.StringVar(&flagWgConfTemplate, "wg-conf-template", util.LookupEnvOrString("WG_CONF_TEMPLATE", flagWgConfTemplate), "Path to custom wg.conf template.")
 	flag.StringVar(&flagBasePath, "base-path", util.LookupEnvOrString("BASE_PATH", flagBasePath), "The base path of the URL")
+	flag.StringVar(&flagSubnetRanges, "subnet-ranges", util.LookupEnvOrString("SUBNET_RANGES", flagSubnetRanges), "IP ranges to choose from when assigning an IP for a client.")
 	flag.Parse()
 
 	// update runtime config
@@ -98,6 +101,7 @@ func init() {
 	util.SessionSecret = []byte(flagSessionSecret)
 	util.WgConfTemplate = flagWgConfTemplate
 	util.BasePath = util.ParseBasePath(flagBasePath)
+	util.SubnetRanges = util.ParseSubnetRanges(flagSubnetRanges)
 
 	// print only if log level is INFO or lower
 	if lvl, _ := util.ParseLogLevel(util.LookupEnvOrString(util.LogLevel, "INFO")); lvl <= log.INFO {
@@ -116,6 +120,7 @@ func init() {
 		//fmt.Println("Session secret\t:", util.SessionSecret)
 		fmt.Println("Custom wg.conf\t:", util.WgConfTemplate)
 		fmt.Println("Base path\t:", util.BasePath+"/")
+		fmt.Println("Subnet ranges\t:", util.GetSubnetRangesString())
 	}
 }
 
@@ -140,6 +145,17 @@ func main() {
 
 	// create the wireguard config on start, if it doesn't exist
 	initServerConfig(db, tmplDir)
+
+	// Check if subnet ranges are valid for the server configuration
+	// Remove any non-valid CIDRs
+	if err := util.ValidateAndFixSubnetRanges(db); err != nil {
+		panic(err)
+	}
+
+	// Print valid ranges
+	if lvl, _ := util.ParseLogLevel(util.LookupEnvOrString(util.LogLevel, "INFO")); lvl <= log.INFO {
+		fmt.Println("Valid subnet ranges:", util.GetSubnetRangesString())
+	}
 
 	// register routes
 	app := router.New(tmplDir, extraData, util.SessionSecret)
@@ -185,6 +201,7 @@ func main() {
 	app.GET(util.BasePath+"/api/clients", handler.GetClients(db), handler.ValidSession)
 	app.GET(util.BasePath+"/api/client/:id", handler.GetClient(db), handler.ValidSession)
 	app.GET(util.BasePath+"/api/machine-ips", handler.MachineIPAddresses(), handler.ValidSession)
+	app.GET(util.BasePath+"/api/subnet-ranges", handler.GetOrderedSubnetRanges(), handler.ValidSession)
 	app.GET(util.BasePath+"/api/suggest-client-ips", handler.SuggestIPAllocation(db), handler.ValidSession)
 	app.POST(util.BasePath+"/api/apply-wg-config", handler.ApplyServerConfig(db, tmplDir), handler.ValidSession, handler.ContentTypeJson)
 	app.GET(util.BasePath+"/wake_on_lan_hosts", handler.GetWakeOnLanHosts(db), handler.ValidSession)

@@ -348,6 +348,10 @@ func GetClients(db store.IStore) echo.HandlerFunc {
 			})
 		}
 
+		for i, clientData := range clientDataList {
+			clientDataList[i] = util.FillClientSubnetRange(clientData)
+		}
+
 		return c.JSON(http.StatusOK, clientDataList)
 	}
 }
@@ -358,9 +362,9 @@ func GetClient(db store.IStore) echo.HandlerFunc {
 
 		clientID := c.Param("id")
 		qrCodeSettings := model.QRCodeSettings{
-			Enabled:       true,
-			IncludeDNS:    true,
-			IncludeMTU:    true,
+			Enabled:    true,
+			IncludeDNS: true,
+			IncludeMTU: true,
 		}
 
 		clientData, err := db.GetClientByID(clientID, qrCodeSettings)
@@ -368,7 +372,7 @@ func GetClient(db store.IStore) echo.HandlerFunc {
 			return c.JSON(http.StatusNotFound, jsonHTTPResponse{false, "Client not found"})
 		}
 
-		return c.JSON(http.StatusOK, clientData)
+		return c.JSON(http.StatusOK, util.FillClientSubnetRange(clientData))
 	}
 }
 
@@ -486,9 +490,9 @@ func EmailClient(db store.IStore, mailer emailer.Emailer, emailSubject, emailCon
 		// TODO validate email
 
 		qrCodeSettings := model.QRCodeSettings{
-			Enabled:       true,
-			IncludeDNS:    true,
-			IncludeMTU:    true,
+			Enabled:    true,
+			IncludeDNS: true,
+			IncludeMTU: true,
 		}
 		clientData, err := db.GetClientByID(payload.ID, qrCodeSettings)
 		if err != nil {
@@ -945,6 +949,13 @@ func MachineIPAddresses() echo.HandlerFunc {
 	}
 }
 
+// GetOrderedSubnetRanges handler to get the ordered list of subnet ranges
+func GetOrderedSubnetRanges() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		return c.JSON(http.StatusOK, util.SubnetRangesOrder)
+	}
+}
+
 // SuggestIPAllocation handler to get the list of ip address for client
 func SuggestIPAllocation(db store.IStore) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -966,20 +977,39 @@ func SuggestIPAllocation(db store.IStore) echo.HandlerFunc {
 				false, "Cannot suggest ip allocation: failed to get list of allocated ip addresses",
 			})
 		}
-		for _, cidr := range server.Interface.Addresses {
-			ip, err := util.GetAvailableIP(cidr, allocatedIPs)
+
+		sr := c.QueryParam("sr")
+		searchCIDRList := make([]string, 0)
+		found := false
+
+		// Use subnet range or default to interface addresses
+		if util.SubnetRanges[sr] != nil {
+			for _, cidr := range util.SubnetRanges[sr] {
+				searchCIDRList = append(searchCIDRList, cidr.String())
+			}
+		} else {
+			searchCIDRList = append(searchCIDRList, server.Interface.Addresses...)
+		}
+
+		for _, cidr := range searchCIDRList {
+			ip, err := util.GetAvailableIP(cidr, allocatedIPs, server.Interface.Addresses)
 			if err != nil {
 				log.Error("Failed to get available ip from a CIDR: ", err)
-				return c.JSON(http.StatusInternalServerError, jsonHTTPResponse{
-					false,
-					fmt.Sprintf("Cannot suggest ip allocation: failed to get available ip from network %s", cidr),
-				})
+				continue
 			}
+			found = true
 			if strings.Contains(ip, ":") {
 				suggestedIPs = append(suggestedIPs, fmt.Sprintf("%s/128", ip))
 			} else {
 				suggestedIPs = append(suggestedIPs, fmt.Sprintf("%s/32", ip))
 			}
+		}
+
+		if !found {
+			return c.JSON(http.StatusInternalServerError, jsonHTTPResponse{
+				false,
+				"Cannot suggest ip allocation: failed to get available ip. Try a different subnet or deallocate some ips.",
+			})
 		}
 
 		return c.JSON(http.StatusOK, suggestedIPs)
@@ -1034,7 +1064,6 @@ func ApplyServerConfig(db store.IStore, tmplDir fs.FS) echo.HandlerFunc {
 		return c.JSON(http.StatusOK, jsonHTTPResponse{true, "Applied server config successfully"})
 	}
 }
-
 
 // GetHashesChanges handler returns if database hashes have changed
 func GetHashesChanges(db store.IStore) echo.HandlerFunc {
