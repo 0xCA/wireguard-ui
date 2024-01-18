@@ -142,7 +142,7 @@ func init() {
 	util.SessionMaxDuration = int64(flagSessionMaxDuration) * 86_400 // Store in seconds
 	util.WgConfTemplate = flagWgConfTemplate
 	util.BasePath = util.ParseBasePath(flagBasePath)
-	util.SubnetRanges = util.ParseSubnetRanges(flagSubnetRanges)
+	util.SubnetRanges, util.SubnetRangesOrder = util.ParseSubnetRanges(flagSubnetRanges)
 
 	lvl, _ := util.ParseLogLevel(util.LookupEnvOrString(util.LogLevel, "INFO"))
 

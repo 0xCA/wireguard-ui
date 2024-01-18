@@ -76,18 +76,19 @@ func ParseBasePath(basePath string) string {
 	return basePath
 }
 
-func ParseSubnetRanges(subnetRangesStr string) map[string]([]*net.IPNet) {
+func ParseSubnetRanges(subnetRangesStr string) (map[string]([]*net.IPNet), []string) {
 	subnetRanges := map[string]([]*net.IPNet){}
+	subnetRangesOrder := []string{}
 	if subnetRangesStr == "" {
-		return subnetRanges
+		return subnetRanges, subnetRangesOrder
 	}
 	cidrSet := map[string]bool{}
 	subnetRangesStr = strings.TrimSpace(subnetRangesStr)
-	subnetRangesStr = strings.Trim(subnetRangesStr, ";:,")
+	subnetRangesStr = strings.Trim(subnetRangesStr, ";|,")
 	ranges := strings.Split(subnetRangesStr, ";")
 	for _, rng := range ranges {
 		rng = strings.TrimSpace(rng)
-		rngSpl := strings.Split(rng, ":")
+		rngSpl := strings.Split(rng, "|")
 		if len(rngSpl) != 2 {
 			log.Warnf("Unable to parse subnet range: %v. Skipped.", rng)
 			continue
@@ -112,8 +113,8 @@ func ParseSubnetRanges(subnetRangesStr string) map[string]([]*net.IPNet) {
 		if len(subnetRanges[rngName]) == 0 {
 			delete(subnetRanges, rngName)
 		} else {
-			SubnetRangesOrder = append(SubnetRangesOrder, rngName)
+			subnetRangesOrder = append(subnetRangesOrder, rngName)
 		}
 	}
-	return subnetRanges
+	return subnetRanges, subnetRangesOrder
 }
